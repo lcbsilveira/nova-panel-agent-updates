@@ -6,9 +6,11 @@ $dataDir = Join-Path $root 'data'
 $credentialFile = Join-Path $dataDir 'panel-access.dpapi'
 $stateFile = Join-Path $dataDir 'panel-state.json'
 $logFile = Join-Path $dataDir 'panel-agent.log'
-$currentVersion = [version]'0.3.0'
+$currentVersion = [version]'0.4.0'
 $manifestUrl = 'https://raw.githubusercontent.com/lcbsilveira/nova-panel-agent-updates/main/manifest.json'
 $trustedAgentUrl = 'https://raw.githubusercontent.com/lcbsilveira/nova-panel-agent-updates/main/NOVA-Painel-Agent.ps1'
+$commandBaseUrl = 'https://raw.githubusercontent.com/lcbsilveira/nova-panel-agent-updates/main/commands'
+$executedCommandsFile = Join-Path $dataDir 'executed-commands.json'
 $publicKeyBase64 = 'BgIAAACkAABSU0ExAAwAAAEAAQB93ntDk+N+FYbRSVXOgP0uNpqHJGffnU7qlHjAMIzGC7xlVReA4iCyszeAO94mBmqv5+2VGxTIaM/NINTWO0A1jnns3Uiolh/9pNK5cRFinS+3PILeV6frAJGp4N5QJX1ystyq7GfZylwYY5FP50ndGA8v20aXpwY13mJMQLZaQurEWKbJtZLWELClw1T8BUnsmBJY/wp4QXvg7XLmD9i48dVYRFiPz54cTATBLCONailgHS/t7buyCD54hgjuA8Psh6L6UpK+jL2anTXfcoN3EDF0bEs7VKMxiifd0Y1SNF3WUvgm5alqPklv23f7j9ceMX/gVxloihhe8OdjbOV/sIGYl0kJUH5+SZ5IziZ0z6MyGAvA4Su+fsV+NsGsllJJIgzLO2ZUpdOve3nNVfVPyUvLoQ6yBX632jMYsFupOV/tORhhfOSJpYIUko/Evl24R+1epNH0/hObEn0WkdKX1YRJCrnUQXc1e4QMQHGNHiNuovxmaiJCF0soA7yui8U='
 [System.IO.Directory]::CreateDirectory($dataDir) | Out-Null
 
@@ -48,6 +50,66 @@ function Send-Telegram([string]$text) {
         Write-Log ('Telegram enviado: ' + $text)
     } catch {
         Write-Log ('Falha Telegram: ' + $_.Exception.Message)
+    }
+}
+
+function ConvertTo-PanelSlug([string]$value) {
+    $normalized = $value.Normalize([Text.NormalizationForm]::FormD)
+    $builder = New-Object Text.StringBuilder
+    foreach ($character in $normalized.ToCharArray()) {
+        if ([Globalization.CharUnicodeInfo]::GetUnicodeCategory($character) -ne [Globalization.UnicodeCategory]::NonSpacingMark) {
+            [void]$builder.Append($character)
+        }
+    }
+    $slug = $builder.ToString().Normalize([Text.NormalizationForm]::FormC).ToLowerInvariant()
+    $slug = [regex]::Replace($slug, '[^a-z0-9]+', '-')
+    return $slug.Trim('-')
+}
+
+function Test-CommandSignature($command) {
+    try {
+        $canonical = '{0}|{1}|{2}|{3}|{4}' -f $command.id, $command.target, $command.action, $command.issued_at, $command.expires_at
+        $bytes = [Text.Encoding]::UTF8.GetBytes($canonical)
+        $signature = [Convert]::FromBase64String([string]$command.signature)
+        $rsa = New-Object Security.Cryptography.RSACryptoServiceProvider
+        $rsa.PersistKeyInCsp = $false
+        $rsa.ImportCspBlob([Convert]::FromBase64String($publicKeyBase64))
+        return $rsa.VerifyData($bytes, 'SHA256', $signature)
+    } catch { return $false }
+}
+
+function Read-ExecutedCommands {
+    if (-not (Test-Path -LiteralPath $executedCommandsFile)) { return @() }
+    try { return @((Get-Content -LiteralPath $executedCommandsFile -Raw | ConvertFrom-Json)) } catch { return @() }
+}
+
+function Test-RemoteCommand {
+    try {
+        $slug = ConvertTo-PanelSlug ([string]$script:config.panel_name)
+        if (-not $slug) { return }
+        $uri = "$commandBaseUrl/$slug.json?ts=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+        $client = New-Object Net.WebClient
+        $client.Headers['User-Agent'] = 'NOVA-Panel-Agent'
+        $command = $client.DownloadString($uri) | ConvertFrom-Json
+        if (-not $command.id -or [string]$command.target -ne [string]$script:config.panel_name) { return }
+        if ([string]$command.action -notin @('restart','cancel_restart')) { return }
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        if ([int64]$command.issued_at -gt ($now + 30) -or [int64]$command.expires_at -lt $now) { return }
+        if (-not (Test-CommandSignature $command)) { Write-Log 'Comando remoto com assinatura invalida ignorado.'; return }
+        $executed = @(Read-ExecutedCommands)
+        if ($executed -contains [string]$command.id) { return }
+        $executed = @($executed + [string]$command.id | Select-Object -Last 100)
+        $executed | ConvertTo-Json | Set-Content -LiteralPath $executedCommandsFile -Encoding UTF8
+
+        if ([string]$command.action -eq 'restart') {
+            Send-Telegram ("REINICIO - {0}`nComando assinado recebido. O computador sera reiniciado em 30 segundos." -f $script:config.panel_name)
+            Start-Process "$env:SystemRoot\System32\shutdown.exe" -ArgumentList @('/r','/t','30','/c','Reinicio solicitado pela NOVA Core') -WindowStyle Hidden
+        } else {
+            Start-Process "$env:SystemRoot\System32\shutdown.exe" -ArgumentList '/a' -WindowStyle Hidden
+            Send-Telegram ("CANCELADO - {0}`nA reinicializacao foi cancelada." -f $script:config.panel_name)
+        }
+    } catch {
+        if ($_.Exception.Message -notmatch '404|not found') { Write-Log ('Falha ao consultar comando remoto: ' + $_.Exception.Message) }
     }
 }
 
@@ -160,10 +222,15 @@ if (Test-Path -LiteralPath $stateFile) {
 
 $lastHealthCheck = [datetime]::MinValue
 $lastUpdateCheck = [datetime]::MinValue
+$lastCommandCheck = [datetime]::MinValue
 while ($true) {
     if (((Get-Date) - $lastUpdateCheck).TotalHours -ge 6) {
         $lastUpdateCheck = Get-Date
         if (Test-AutoUpdate) { exit 0 }
+    }
+    if (((Get-Date) - $lastCommandCheck).TotalSeconds -ge 30) {
+        $lastCommandCheck = Get-Date
+        Test-RemoteCommand
     }
     $current = @{}
     $windowIssue = Get-ForegroundIssue
