@@ -1,7 +1,7 @@
 {
-    "version":  "0.3.0",
-    "published_at":  "2026-08-20T14:46:06.2062028Z",
+    "version":  "0.4.0",
+    "published_at":  "2026-08-20T18:45:26.2089447Z",
     "url":  "https://raw.githubusercontent.com/lcbsilveira/nova-panel-agent-updates/main/NOVA-Painel-Agent.ps1",
-    "sha256":  "6811f2218fe610ea02f010e197d7ed0b08a2bcd1b213ec72aed38f138443e9b9",
-    "signature":  "p3APzDivRi2a8N0A/cJ+GeD4CjUMjgp+CAdAcBl2jA1v4bzSQ+QJvuzvcoAx7G5G62JJlT3GGRSy2v20//Mk5U9nw7qH1RF0h2+YQENB48db71o0OIkUt1KLpK8Ssfb9SIEqfBwtZTZR3WdVKZlGxktNzogJAdwS1Ntz+IhECcanzxyLEtJwT9OuWDyROPp0ABL3FStXxUhkLfF/4mjY8mOlTk6ZzRt2+tLWfSvx7ZdeqgwuwqYsQ8Garuf+G2YKICqm0lL6kod7FUFrED9hgD4HtCy/hPe/i5hiclPOyW8L0S+l1+YXftLDHa0MWPerPrxMGvaxMUfGsx1YSCH4/93QOcjk1f98gvWBGhmhjomDjlexWke7N4Z/UwKBGq7/UcIcWkZ/CprX4kwCtnm4I7rhfp7WUh89Tpqp/ZihkJc951cIlNO5Wap9l1D/f4pwTWlxLJk0DVlZhdzI0cyE0efKnGVP8AW+YdRCtf2NUt8getBMY3STRsWZTYgoyvhs"
+    "sha256":  "0a2bd104e688d6df01b507a2f71535032c2c552fcdcfae824e4ff8010022fbc3",
+    "signature":  "n+phoSdMz84Szc3Pus4hw+qIZcjafw43pv1O8azkfhNsLmvPThmSft6hYzRTjwssvAjixusUytCOWozn95AAlTOuIYAqevH1QgD514pPrgoE/6ptJViFhZ/fU2QFtaqi1lj13AyQXgrUfOm3KdM08Tc601CgYnIUQGD5y6o2Gm8VT7OnZGAukm8zAa4rSFP6fNu4RHrwQo3rJ33NYKYxagpZVq5YXcQ54ibeWWr6SSdLYZ55lYiIJzjB/ISWV0do6MandG6vsi0NKcjRW6Cxh9Q0mAszeO8Ac1kYEIOjnuIEBm37e0vR+ZgFKnSIkPNwJR47dMAwCLJbgA3X9ft+3+p9zlbY5pcBqEVDXn9UW+DLOoNfFrwnIujU2Myq7h6Ec3lHOrhJJLEAA0Rz5Z53WXKEPMZUiJePgUdEcZ4L2wwHL8xCzhU30uaKCfVWSBaFor4xI9DiDpl+UW6ee5o8kbJo/JcQ4bcsiiswTBSY7FmfCgLKj/KvMs++6oQ8XXLo"
 }
