@@ -6,7 +6,7 @@ $dataDir = Join-Path $root 'data'
 $credentialFile = Join-Path $dataDir 'panel-access.dpapi'
 $stateFile = Join-Path $dataDir 'panel-state.json'
 $logFile = Join-Path $dataDir 'panel-agent.log'
-$currentVersion = [version]'0.4.3'
+$currentVersion = [version]'0.4.4'
 $manifestUrl = 'https://raw.githubusercontent.com/lcbsilveira/nova-panel-agent-updates/main/manifest.json'
 $trustedAgentUrl = 'https://raw.githubusercontent.com/lcbsilveira/nova-panel-agent-updates/main/NOVA-Painel-Agent.ps1'
 $commandBaseUrl = 'https://raw.githubusercontent.com/lcbsilveira/nova-panel-agent-updates/main/commands'
@@ -190,7 +190,8 @@ function Get-DisruptiveWindowIssues {
         'terminar de configurar', 'finish setting up',
         '^erro$', '^error$', 'warning', 'aviso', 'atencao', 'attention'
     )
-    $allowedProcessPatterns = @('^ebclient$', '^teamviewer', '^tv_')
+    # EBClient usa o EdgeBrowser/CEF internamente para renderizar as midias.
+    $allowedProcessPatterns = @('^ebclient$', '^edgebrowser', '^cef', '^teamviewer', '^tv_')
     foreach ($process in Get-Process -ErrorAction SilentlyContinue) {
         $handle = $process.MainWindowHandle
         if ($handle -eq [IntPtr]::Zero) { continue }
