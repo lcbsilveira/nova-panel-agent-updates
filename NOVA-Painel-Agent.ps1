@@ -6,7 +6,7 @@ $dataDir = Join-Path $root 'data'
 $credentialFile = Join-Path $dataDir 'panel-access.dpapi'
 $stateFile = Join-Path $dataDir 'panel-state.json'
 $logFile = Join-Path $dataDir 'panel-agent.log'
-$currentVersion = [version]'0.4.1'
+$currentVersion = [version]'0.4.3'
 $manifestUrl = 'https://raw.githubusercontent.com/lcbsilveira/nova-panel-agent-updates/main/manifest.json'
 $trustedAgentUrl = 'https://raw.githubusercontent.com/lcbsilveira/nova-panel-agent-updates/main/NOVA-Painel-Agent.ps1'
 $commandBaseUrl = 'https://raw.githubusercontent.com/lcbsilveira/nova-panel-agent-updates/main/commands'
@@ -27,6 +27,8 @@ public static class NovaWindow {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
 }
 '@
 
@@ -176,6 +178,50 @@ function Get-ForegroundIssue {
     return $null
 }
 
+function Get-DisruptiveWindowIssues {
+    $issues = @{}
+    $processPatterns = @(
+        '^taskmgr$', '^widgets$', '^widgetservice$', '^searchhost$',
+        '^startmenuexperiencehost$', '^systemsettings$', '^applicationframehost$'
+    )
+    $titlePatterns = @(
+        'gerenciador de tarefas', 'task manager', 'widgets',
+        'configuracoes', 'settings', 'windows update',
+        'terminar de configurar', 'finish setting up',
+        '^erro$', '^error$', 'warning', 'aviso', 'atencao', 'attention'
+    )
+    $allowedProcessPatterns = @('^ebclient$', '^teamviewer', '^tv_')
+    foreach ($process in Get-Process -ErrorAction SilentlyContinue) {
+        $handle = $process.MainWindowHandle
+        if ($handle -eq [IntPtr]::Zero) { continue }
+        if (-not [NovaWindow]::IsWindowVisible($handle) -or [NovaWindow]::IsIconic($handle)) { continue }
+        $name = [string]$process.ProcessName
+        $title = [string]$process.MainWindowTitle
+        $combined = ($name + ' ' + $title).ToLowerInvariant()
+        $isDisruptive = $false
+        foreach ($pattern in $processPatterns) { if ($name -match $pattern) { $isDisruptive = $true; break } }
+        if (-not $isDisruptive) {
+            foreach ($pattern in $titlePatterns) {
+                if ($combined -match $pattern -or $title.ToLowerInvariant() -match $pattern) { $isDisruptive = $true; break }
+            }
+        }
+        # O EBClient e o exibidor esperado. O TeamViewer e ignorado para que o
+        # acesso de manutencao nao gere falso alerta. Qualquer outra janela com
+        # titulo visivel e tratada como interferencia sobre a midia.
+        if (-not $isDisruptive -and $title.Trim()) {
+            $isAllowed = $false
+            foreach ($pattern in $allowedProcessPatterns) { if ($name -match $pattern) { $isAllowed = $true; break } }
+            if (-not $isAllowed) { $isDisruptive = $true }
+        }
+        if ($isDisruptive) {
+            $label = if ($title.Trim()) { $title.Trim() } else { $name }
+            $key = 'disruptive:' + $name.ToLowerInvariant()
+            $issues[$key] = "Uma janela do Windows esta cobrindo a exibicao: $label."
+        }
+    }
+    return $issues
+}
+
 function Test-PendingReboot {
     $paths = @(
         'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired',
@@ -250,6 +296,8 @@ while ($true) {
     $current = @{}
     $windowIssue = Get-ForegroundIssue
     if ($windowIssue) { $current[$windowIssue.key] = $windowIssue.message }
+    $disruptiveWindows = Get-DisruptiveWindowIssues
+    foreach ($key in $disruptiveWindows.Keys) { $current[$key] = $disruptiveWindows[$key] }
     if (((Get-Date) - $lastHealthCheck).TotalMinutes -ge 10) {
         $health = Get-HealthIssues
         foreach ($key in $health.Keys) { $current[$key] = $health[$key] }
