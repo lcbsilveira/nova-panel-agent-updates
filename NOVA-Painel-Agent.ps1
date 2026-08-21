@@ -6,11 +6,12 @@ $dataDir = Join-Path $root 'data'
 $credentialFile = Join-Path $dataDir 'panel-access.dpapi'
 $stateFile = Join-Path $dataDir 'panel-state.json'
 $logFile = Join-Path $dataDir 'panel-agent.log'
-$currentVersion = [version]'0.4.0'
+$currentVersion = [version]'0.4.1'
 $manifestUrl = 'https://raw.githubusercontent.com/lcbsilveira/nova-panel-agent-updates/main/manifest.json'
 $trustedAgentUrl = 'https://raw.githubusercontent.com/lcbsilveira/nova-panel-agent-updates/main/NOVA-Painel-Agent.ps1'
 $commandBaseUrl = 'https://raw.githubusercontent.com/lcbsilveira/nova-panel-agent-updates/main/commands'
 $executedCommandsFile = Join-Path $dataDir 'executed-commands.json'
+$reportedVersionFile = Join-Path $dataDir 'reported-version.txt'
 $publicKeyBase64 = 'BgIAAACkAABSU0ExAAwAAAEAAQB93ntDk+N+FYbRSVXOgP0uNpqHJGffnU7qlHjAMIzGC7xlVReA4iCyszeAO94mBmqv5+2VGxTIaM/NINTWO0A1jnns3Uiolh/9pNK5cRFinS+3PILeV6frAJGp4N5QJX1ystyq7GfZylwYY5FP50ndGA8v20aXpwY13mJMQLZaQurEWKbJtZLWELClw1T8BUnsmBJY/wp4QXvg7XLmD9i48dVYRFiPz54cTATBLCONailgHS/t7buyCD54hgjuA8Psh6L6UpK+jL2anTXfcoN3EDF0bEs7VKMxiifd0Y1SNF3WUvgm5alqPklv23f7j9ceMX/gVxloihhe8OdjbOV/sIGYl0kJUH5+SZ5IziZ0z6MyGAvA4Su+fsV+NsGsllJJIgzLO2ZUpdOve3nNVfVPyUvLoQ6yBX632jMYsFupOV/tORhhfOSJpYIUko/Evl24R+1epNH0/hObEn0WkdKX1YRJCrnUQXc1e4QMQHGNHiNuovxmaiJCF0soA7yui8U='
 [System.IO.Directory]::CreateDirectory($dataDir) | Out-Null
 
@@ -136,7 +137,13 @@ function Test-AutoUpdate {
         Copy-Item -LiteralPath $scriptPath -Destination $backupPath -Force
         [System.IO.File]::WriteAllBytes($scriptPath, $newBytes)
         Send-Telegram ("ATUALIZADO - {0}`nAgente NOVA atualizado para v{1}." -f $script:config.panel_name, $manifest.version)
-        Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File',('"' + $scriptPath + '"'))
+        # O processo atual ainda possui o mutex do agente. Reiniciar imediatamente
+        # faria a nova copia encerrar antes que esse mutex fosse liberado.
+        # A tarefa agendada e acionada alguns segundos depois, quando este processo
+        # ja tiver terminado.
+        $restartTask = "Start-Sleep -Seconds 5; Start-ScheduledTask -TaskName 'NOVA Painel Agent'"
+        $restartEncoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($restartTask))
+        Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-EncodedCommand',$restartEncoded)
         return $true
     } catch {
         Write-Log ('Falha na atualizacao automatica: ' + $_.Exception.Message)
@@ -212,6 +219,14 @@ function Get-HealthIssues {
 }
 
 try { $script:config = Read-Credential } catch { Write-Log $_.Exception.Message; exit 2 }
+$reportedVersion = ''
+if (Test-Path -LiteralPath $reportedVersionFile) {
+    $reportedVersion = ([IO.File]::ReadAllText($reportedVersionFile)).Trim()
+}
+if ($reportedVersion -ne $currentVersion.ToString()) {
+    Send-Telegram ("AGENTE ATIVO - {0}`nVersao {1}. Monitoramento e comandos remotos ativos." -f $script:config.panel_name, $currentVersion)
+    [IO.File]::WriteAllText($reportedVersionFile, $currentVersion.ToString())
+}
 $active = @{}
 if (Test-Path -LiteralPath $stateFile) {
     try {
